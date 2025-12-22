@@ -32,16 +32,16 @@ exports.createGroup = async (req, res) => {
 exports.addMember = async (req, res) => {
   const { groupId } = req.params;
   const { user_id } = req.body;
-
+  console.log(`Adding user ${user_id} to group ${groupId}`); 
   try {
-    // Check if the user is already in the group to avoid errors
+    // Check if the user is already an active member of the group to avoid errors
     const existing = await db.query(
-      'SELECT * FROM group_members WHERE group_id = $1 AND user_id = $2',
+      'SELECT * FROM group_members WHERE group_id = $1 AND user_id = $2 AND left_at IS NULL',
       [groupId, user_id]
     );
 
     if (existing.rows.length > 0) {
-      return res.status(400).json({ error: "User is already a member of this group" });
+      return res.status(400).json({ error: "User is already an active member of this group" });
     }
 
     const result = await db.query(
@@ -53,5 +53,24 @@ exports.addMember = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not add member. Ensure User and Group IDs are correct." });
+  }
+};
+
+exports.leaveGroup = async (req, res) => {
+  const { groupId, userId } = req.params;
+
+  try {
+    const result = await db.query(
+      'UPDATE group_members SET left_at = NOW() WHERE group_id = $1 AND user_id = $2 RETURNING *',
+      [groupId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Member not found in this group" });
+    }
+
+    res.json({ message: "User has left the group", data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 };
