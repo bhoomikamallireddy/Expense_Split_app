@@ -65,7 +65,7 @@ exports.leaveGroup = async (req, res) => {
       [groupId, userId]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: "Member not found in this group" });
     }
 
