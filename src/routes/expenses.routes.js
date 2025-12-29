@@ -7,5 +7,6 @@ router.post('/:groupId/expenses', expensesController.createExpense);
 router.get('/:groupId/balances', expensesController.getBalances);
 router.get('/:groupId/expenses', expensesController.getGroupExpenses);
 router.get('/:groupId/simplified',expensesController.getSimplifiedBalances);
+router.get('/:groupId/dashboard', expensesController.getGroupDashboard);
 
 module.exports = router;

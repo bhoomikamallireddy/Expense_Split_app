@@ -1,4 +1,30 @@
-const db = require('../db');
+const settlementService = require('../services/settlement.service');
+
+exports.createSettlement = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { from_user, to_user, amount } = req.body;
+
+    // Delegate business logic to the service
+    const settlement = await settlementService.processSettlement({
+      groupId: parseInt(groupId),
+      fromUser: parseInt(from_user),
+      toUser: parseInt(to_user),
+      amount: parseFloat(amount)
+    });
+
+    return res.status(201).json(settlement);
+
+  } catch (err) {
+    // Catch specific validation errors (e.g., "Amount exceeds net debt")
+    console.error('Settlement Controller Error:', err.message);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+/*const db = require('../db');
+const { createLedgerEntry } = require('../services/ledger.service');
+const settlementService = require('../services/settlement.service');
 
 exports.createSettlement = async (req, res) => {
   const { groupId } = req.params;
@@ -28,14 +54,22 @@ exports.createSettlement = async (req, res) => {
     // When Bob (from) pays Alice (to), money flows FROM Bob TO Alice.
     // This reduces Bob's debt in the balance calculation.
     // Bob pays Alice → cancel Bob's debt
-    await db.query(
-    `
-     INSERT INTO ledger_entries (group_id, expense_id, from_user, to_user, amount)
-     VALUES ($1, NULL, $2, $3, $4)
-    `,
-    [groupId, to_user, from_user, amount] // REVERSED
-   );
-
+    const settlementId = settlementRes.rows[0].id;
+    await createLedgerEntry({
+      groupId,
+      fromUser: from_user,
+      toUser: to_user,
+      amount: amount,
+      expenseId: null,          
+      sourceType: 'SETTLEMENT',  
+      sourceId: settlementId     
+    });
+    const settlement = await settlementService.processSettlement({
+      groupId: parseInt(groupId),
+      fromUser: parseInt(from_user),
+      toUser: parseInt(to_user),
+      amount: parseFloat(amount)
+    });
 
     await db.query('COMMIT');
     console.log(`✅ Settlement Processed: ${from_user} paid ${to_user} amount ${amount}`);
@@ -46,4 +80,4 @@ exports.createSettlement = async (req, res) => {
     console.error('Settlement Error:', err);
     res.status(500).json({ error: 'Failed to process settlement' });
   }
-};
+};*/

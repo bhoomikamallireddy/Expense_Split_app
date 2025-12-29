@@ -1,7 +1,7 @@
 const db = require('../db');
 const { getGroupBalances } = require('../services/balance.service');
 const simplifyBalances = require('../utils/balanceSimplifier');
-
+const { createLedgerEntry } = require('../services/ledger.service');
 
 /**
  * Helper: validate group existence
@@ -32,14 +32,14 @@ async function fetchValidMembers(groupId, atTime) {
 
 /**
  * Helper: generate ledger entries (SINGLE SOURCE OF TRUTH)
- */
+ 
 async function generateLedger(expenseId, paidBy, splits) {
   for (const { userId, amount } of splits) {
     if (userId !== paidBy && amount > 0) {
       await db.query(
         `
-        INSERT INTO ledger_entries (group_id, expense_id, from_user, to_user, amount)
-        VALUES ($1, $2, $3, $4, $5);
+        INSERT INTO ledger_entries (group_id, expense_id, from_user, to_user, amount, source_type, source_id)
+        VALUES ($1, $2, $3, $4, $5, 'EXPENSE', $2);
 
         `,
         [groupId, expenseId, userId, paidBy, amount]
@@ -47,14 +47,14 @@ async function generateLedger(expenseId, paidBy, splits) {
     }
   }
 }
-
+*/
 /**
  * CREATE EXPENSE + LEDGER
  */
 exports.createExpense = async (req, res) => {
   const { groupId } = req.params;
   const { paid_by, total_amount, description, split_type, participants, splits } = req.body;
-
+  
   try {
     await db.query('BEGIN');
     console.log("--- Starting Expense Creation ---");
@@ -166,13 +166,15 @@ exports.createExpense = async (req, res) => {
       
       if (s.userId !== paidByNum && s.amount > 0) {
         console.log(`>> INSERTING LEDGER: ${s.userId} owes ${paidByNum} amount ${s.amount}`);
-        await db.query(
-          `
-          INSERT INTO ledger_entries (expense_id, from_user, to_user, amount, group_id)
-          VALUES ($1, $2, $3, $4, $5)
-          `,
-          [expenseId, s.userId, paidByNum, s.amount, groupId]
-        );
+        await createLedgerEntry({
+          groupId: groupId,
+          fromUser: s.userId,
+          toUser: paidByNum,
+          amount: s.amount,
+          expenseId: expenseId,
+          sourceType: 'EXPENSE',
+          sourceId: expenseId
+        });
       } else {
         console.log(`>> SKIPPED LEDGER: User is payer or amount is 0`);
       }
@@ -311,6 +313,46 @@ exports.getSimplifiedBalances = async (req, res) => {
   }
 };
 
+exports.getGroupDashboard = async (req, res) => {
+  const { groupId } = req.params;
 
+  try {
+    // 1. Fetch Group Info
+    const groupRes = await db.query(
+      'SELECT id, name, created_at FROM groups WHERE id = $1', 
+      [groupId]
+    );
+    if (groupRes.rowCount === 0) return res.status(404).json({ error: "Group not found" });
+
+    // 2. Fetch Recent Expenses (Limit to last 5)
+    const expensesRes = await db.query(
+      `SELECT e.*, u.name as payer_name 
+       FROM expenses e 
+       JOIN users u ON e.paid_by = u.id 
+       WHERE e.group_id = $1 
+       ORDER BY e.created_at DESC LIMIT 5`,
+      [groupId]
+    );
+
+    // 3. Fetch Balances & Simplify (Milestone 5 & 6)
+    const netBalances = await getGroupBalances(groupId);
+    const simplified = simplifyBalances(netBalances);
+
+    // 4. Combine everything
+    res.json({
+      group: groupRes.rows[0],
+      recent_expenses: expensesRes.rows,
+      my_balances: netBalances.map(b => ({
+        name: b.name,
+        amount: b.net_balance.toFixed(2)
+      })),
+      suggested_settlements: simplified
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
 
 
